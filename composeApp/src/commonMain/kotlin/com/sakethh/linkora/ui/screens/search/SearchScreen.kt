@@ -243,32 +243,10 @@ fun SearchScreen(
                             },
                             nestedScrollConnection = null,
                             onAttachedTagClick = {
-                                val collectionDetailPaneInfo = CollectionDetailPaneInfo(
-                                    currentFolder = null,
-                                    currentTag = it,
-                                    collectionType = CollectionType.TAG,
-                                )
-                                navController.navigate(
-                                    Navigation.Collection.CollectionDetailScreen(
-                                        Json.encodeToString(
-                                            collectionDetailPaneInfo
-                                        )
-                                    )
-                                )
+                                searchScreenVM.toggleSelectedTag(it)
                             },
                             onTagClick = {
-                                val collectionDetailPaneInfo = CollectionDetailPaneInfo(
-                                    currentFolder = null,
-                                    currentTag = it,
-                                    collectionType = CollectionType.TAG,
-                                )
-                                navController.navigate(
-                                    Navigation.Collection.CollectionDetailScreen(
-                                        Json.encodeToString(
-                                            collectionDetailPaneInfo
-                                        )
-                                    )
-                                )
+                                searchScreenVM.toggleSelectedTag(it)
                             },
                             tagMoreIconClick = {
                                 coroutineScope.pushUIEvent(

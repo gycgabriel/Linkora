@@ -42,6 +42,12 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.collect
+import kotlinx.serialization.json.Json
+import com.sakethh.linkora.domain.model.tag.Tag
+import com.sakethh.linkora.domain.model.link.Link
 
 class SearchScreenVM(
     private val localLinksRepo: LocalLinksRepo,
@@ -86,10 +92,80 @@ class SearchScreenVM(
     private val _appliedTagFiltering = mutableStateOf(false)
     val appliedTagFiltering by _appliedTagFiltering
 
+    private val _selectedTagIds = mutableStateListOf<Long>()
+    val selectedTagIds = _selectedTagIds
+
+    fun toggleSelectedTag(tag: Tag) {
+        if (_selectedTagIds.contains(tag.localId)) {
+            _selectedTagIds.remove(tag.localId)
+        } else {
+            _selectedTagIds.add(tag.localId)
+        }
+
+        // populate search query with selected tag names
+        viewModelScope.launch {
+            val selectedNames = if (_selectedTagIds.isEmpty()) "" else {
+                localTagsRepo.getTags(_selectedTagIds.toList()).first().joinToString(" ") { it.name }
+            }
+            _searchQuery.value = selectedNames
+        }
+    }
+
     private val searchResultsPaginator = Paginator<FlatSearchResult>(
         coroutineScope = viewModelScope,
         onRetrieve = { lastSeenId, lastSeenString ->
             val currentQuery = _searchQuery.value
+            val selectedTagsForSearch = _selectedTagIds.toList()
+            if (selectedTagsForSearch.isNotEmpty()) {
+                return@Paginator flow {
+                    emit(Result.Loading())
+                    val links = mutableListOf<Link>()
+                    for (tagId in selectedTagsForSearch) {
+                        localLinksRepo.getLinks(tagId, preferencesRepository.getPreferences().selectedSortingType, pageSize, null, null).collect { res ->
+                            when (res) {
+                                is Result.Success -> {
+                                    links.addAll(res.data)
+                                    break
+                                }
+
+                                is Result.Failure -> {
+                                    emit(Result.Failure(res.message))
+                                    return@flow
+                                }
+
+                                is Result.Loading -> {
+                                }
+                            }
+                        }
+                    }
+
+                    val uniqueLinks = links.distinctBy { it.localId }.take(pageSize)
+                    val linkIds = uniqueLinks.map { it.localId }
+                    val tagsMap = if (linkIds.isEmpty()) emptyMap<Long, List<Tag>>() else localTagsRepo.getTagsForLinks(linkIds).first()
+
+                    val flatResults = uniqueLinks.map { link ->
+                        FlatSearchResult(
+                            itemType = Constants.LINK,
+                            linkType = link.linkType,
+                            linkLocalId = link.localId,
+                            linkRemoteId = link.remoteId,
+                            linkTitle = link.title,
+                            linkUrl = link.url,
+                            linkHost = link.host,
+                            linkImgUrl = link.imgURL,
+                            linkNote = link.note,
+                            linkIdOfLinkedFolder = link.idOfLinkedFolder,
+                            linkUserAgent = link.userAgent,
+                            linkMediaType = link.mediaType,
+                            linkLastModified = link.lastModified,
+                            linkTagsJson = Json.encodeToString(tagsMap[link.localId] ?: emptyList())
+                        )
+                    }
+
+                    emit(Result.Success(flatResults))
+                }
+            }
+
             if (currentQuery.isBlank()) {
                 return@Paginator flowOf(Result.Success(emptyList()))
             }
